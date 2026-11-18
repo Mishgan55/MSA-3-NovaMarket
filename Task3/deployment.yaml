@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scaletestapp
+  labels:
+    app: scaletestapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scaletestapp
+  template:
+    metadata:
+      labels:
+        app: scaletestapp
+    spec:
+      containers:
+        - name: scaletestapp
+          image: ghcr.io/yandex-practicum/scaletestapp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            # HPA считает утилизацию памяти от requests, а не от limits. При requests = limits = 30Mi HPA с допуском 10%
+            # добавил бы реплику только при ~26Mi — вплотную к OOMKilled. При requests 20Mi цель 80% = 16Mi:
+            # реплики добавляются, когда под ещё далеко от лимита 30Mi
+            requests:
+              memory: 20Mi
+              cpu: 50m
+            limits:
+              memory: 30Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10

@@ -1,0 +1,36 @@
+@startuml saga-2-inventory-failed
+title Saga «Оформление заказа» — товара нет в нужном количестве
+
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor "Покупатель" as customer
+participant "Мобильное\nприложение" as app
+participant "Order Service" as order
+queue "Kafka" as kafka
+participant "Inventory Service" as inventory
+participant "Notification\nService" as notify
+
+customer -> app : Подтверждает заказ
+app -> order : POST /orders
+order -> order : Заказ «Создан» + outbox
+order --> app : 202 Accepted, orderId
+order -> kafka : **OrderCreated**
+
+kafka -> inventory : OrderCreated
+inventory -> inventory : Хотя бы одной позиции\nне хватает — не резервирует ничего\n(резерв всех позиций атомарный)
+inventory -> kafka : **InventoryReservationFailed**\n(позиции и доступное количество)
+
+kafka -> order : InventoryReservationFailed
+order -> order : Статус «Отменён»,\nпричина OUT_OF_STOCK
+order -> kafka : **OrderCancelled**
+
+kafka -> notify : OrderCancelled
+notify -> customer : Push «Товара нет в нужном количестве,\nзаказ не оформлен»
+
+note over order, inventory
+  Компенсировать нечего: резерв не создан, деньги не списаны.
+  Платёж не начинается — Payment Service ждёт только InventoryReserved.
+end note
+@enduml

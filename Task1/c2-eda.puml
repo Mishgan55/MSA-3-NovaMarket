@@ -1,0 +1,119 @@
+@startuml c2-eda
+!include <C4/C4_Container>
+
+title NovaMarket — контейнерная диаграмма (C2), событийная архитектура MVP
+
+LAYOUT_TOP_DOWN()
+SHOW_PERSON_OUTLINE()
+
+Person(customer, "Покупатель", "Выбирает товары, оформляет и оплачивает заказ, следит за статусом")
+Person(seller, "Продавец", "Ведёт товары и остатки, получает уведомления о новых заказах")
+
+System_Ext(payment_gw, "Платёжный шлюз", "Платёжная страница, токенизация карт, списание и возврат средств")
+System_Ext(logistics, "Логистический провайдер", "Приём заявок на доставку, трек-номер, статусы доставки")
+System_Ext(push, "Push / e-mail / SMS провайдеры", "FCM, APNs, почта, SMS")
+
+System_Boundary(nova, "NovaMarket (Kubernetes)") {
+    Container(mobile, "Мобильное приложение", "Kotlin / Swift", "Единственный клиентский канал MVP: каталог, корзина, оформление заказа, личный кабинет покупателя и продавца")
+    Container(gateway, "API Gateway", "NGINX", "Единая точка входа: маршрутизация, проверка JWT, rate limiting по каналам")
+
+    Container(user_svc, "User Service", "Java, Spring Boot", "Регистрация и профили покупателей и продавцов, адреса, выдача JWT. Новый продавец — это запись, а не изменение архитектуры")
+    ContainerDb(user_db, "User DB", "PostgreSQL")
+
+    Container(catalog_svc, "Catalog Service", "Java, Spring Boot", "Товары, категории, цены, фото, карточка товара. Хранит наличие и рейтинг, обновляя их по событиям")
+    ContainerDb(catalog_db, "Catalog DB", "PostgreSQL", "Мастер-данные товаров")
+    ContainerDb(catalog_search, "Search Index", "OpenSearch", "Список и фильтры по категории, цене, рейтингу")
+    ContainerDb(catalog_cache, "Catalog Cache", "Redis", "Горячие карточки товаров")
+
+    Container(review_svc, "Review Service", "Java, Spring Boot", "Отзывы покупателей и пересчёт рейтинга товара")
+    ContainerDb(review_db, "Review DB", "PostgreSQL")
+
+    Container(cart_svc, "Cart Service", "Java, Spring Boot", "Корзина покупателя до оформления заказа")
+    ContainerDb(cart_db, "Cart Store", "Redis", "Корзины с TTL")
+
+    Container(order_svc, "Order Service", "Java, Spring Boot", "Создаёт заказ, хранит его статус и детали. Участник Saga оформления заказа")
+    ContainerDb(order_db, "Order DB", "PostgreSQL", "Заказы + outbox")
+
+    Container(inventory_svc, "Inventory Service", "Java, Spring Boot", "Остатки на складах продавцов, резервирование и списание товара. Участник Saga")
+    ContainerDb(inventory_db, "Inventory DB", "PostgreSQL", "Остатки, резервы + outbox")
+
+    Container(payment_svc, "Payment Service", "Java, Spring Boot", "Платёжные сессии, автосписание с привязанной карты, возвраты. Участник Saga")
+    ContainerDb(payment_db, "Payment DB", "PostgreSQL", "Платежи, токены карт + outbox")
+
+    Container(delivery_svc, "Delivery Service", "Java, Spring Boot", "Заявки на доставку, трек-номера, статусы доставки. Участник Saga")
+    ContainerDb(delivery_db, "Delivery DB", "PostgreSQL", "Заявки на доставку + outbox")
+
+    Container(notification_svc, "Notification Service", "Java, Spring Boot", "Уведомления покупателям и продавцам по событиям")
+
+    Container(egress, "Egress Proxy", "NGINX", "Прокси к внешним сервисам: таймауты, circuit breaker")
+
+    ContainerQueue(t_order, "Топик order.events", "Apache Kafka", "OrderCreated, OrderCancelled, OrderCompleted")
+    ContainerQueue(t_inventory, "Топик inventory.events", "Apache Kafka", "InventoryReserved, InventoryReservationFailed, InventoryReleased, StockLevelChanged")
+    ContainerQueue(t_payment, "Топик payment.events", "Apache Kafka", "PaymentSucceeded, PaymentFailed, RefundSucceeded, RefundFailed")
+    ContainerQueue(t_delivery, "Топик delivery.events", "Apache Kafka", "DeliveryCreated, DeliveryCreationFailed, DeliveryStatusChanged")
+    ContainerQueue(t_review, "Топик review.events", "Apache Kafka", "ReviewPublished")
+}
+
+Rel(customer, mobile, "Использует")
+Rel(seller, mobile, "Использует кабинет продавца")
+Rel(mobile, gateway, "REST", "HTTPS/JSON")
+
+Rel(gateway, user_svc, "REST")
+Rel(gateway, catalog_svc, "REST")
+Rel(gateway, review_svc, "REST")
+Rel(gateway, cart_svc, "REST")
+Rel(gateway, order_svc, "REST: оформить заказ, статус")
+Rel(gateway, payment_svc, "REST: ссылка на оплату")
+Rel(gateway, inventory_svc, "REST: остатки продавца")
+
+Rel(user_svc, user_db, "JDBC")
+Rel(catalog_svc, catalog_db, "JDBC")
+Rel(catalog_svc, catalog_search, "Индексирует и ищет")
+Rel(catalog_svc, catalog_cache, "Cache-aside")
+Rel(review_svc, review_db, "JDBC")
+Rel(cart_svc, cart_db, "Redis protocol")
+Rel(order_svc, order_db, "JDBC")
+Rel(inventory_svc, inventory_db, "JDBC")
+Rel(payment_svc, payment_db, "JDBC")
+Rel(delivery_svc, delivery_db, "JDBC")
+Rel(order_svc, cart_svc, "Забирает состав корзины при оформлении", "REST")
+
+' ---- Публикация событий (каждый сервис публикует только в свой топик) ----
+Rel(order_svc, t_order, "Публикует", "kafka")
+Rel(inventory_svc, t_inventory, "Публикует", "kafka")
+Rel(payment_svc, t_payment, "Публикует", "kafka")
+Rel(delivery_svc, t_delivery, "Публикует", "kafka")
+Rel(review_svc, t_review, "Публикует", "kafka")
+
+' ---- Потребление событий ----
+Rel_U(inventory_svc, t_order, "Потребляет OrderCreated", "kafka")
+Rel_U(notification_svc, t_order, "Потребляет", "kafka")
+
+Rel_U(order_svc, t_inventory, "Потребляет InventoryReserved, InventoryReservationFailed, InventoryReleased", "kafka")
+Rel_U(payment_svc, t_inventory, "Потребляет InventoryReserved", "kafka")
+Rel_U(catalog_svc, t_inventory, "Потребляет StockLevelChanged", "kafka")
+
+Rel_U(order_svc, t_payment, "Потребляет", "kafka")
+Rel_U(inventory_svc, t_payment, "Потребляет PaymentSucceeded, PaymentFailed, RefundSucceeded", "kafka")
+Rel_U(delivery_svc, t_payment, "Потребляет PaymentSucceeded", "kafka")
+Rel_U(notification_svc, t_payment, "Потребляет", "kafka")
+
+Rel_U(order_svc, t_delivery, "Потребляет", "kafka")
+Rel_U(payment_svc, t_delivery, "Потребляет DeliveryCreationFailed", "kafka")
+Rel_U(inventory_svc, t_delivery, "Потребляет DeliveryStatusChanged", "kafka")
+Rel_U(notification_svc, t_delivery, "Потребляет", "kafka")
+
+Rel_U(catalog_svc, t_review, "Потребляет ReviewPublished", "kafka")
+
+' ---- Внешние интеграции ----
+Rel(payment_svc, egress, "Платёж, возврат", "HTTPS")
+Rel(delivery_svc, egress, "Заявка на доставку", "HTTPS")
+Rel(egress, payment_gw, "API шлюза", "HTTPS")
+Rel(egress, logistics, "API провайдера", "HTTPS")
+Rel(payment_gw, gateway, "Webhook: результат платежа", "HTTPS")
+Rel(logistics, gateway, "Webhook: статус доставки", "HTTPS")
+Rel(mobile, payment_gw, "Платёжная страница (данные карты не проходят через NovaMarket)", "HTTPS")
+Rel(notification_svc, push, "Push, e-mail, SMS", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

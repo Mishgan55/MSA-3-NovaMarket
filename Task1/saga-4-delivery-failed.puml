@@ -1,0 +1,63 @@
+@startuml saga-4-delivery-failed
+title Saga «Оформление заказа» — заявку на доставку создать не удалось
+
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor "Покупатель" as customer
+participant "Order Service" as order
+queue "Kafka" as kafka
+participant "Inventory Service" as inventory
+participant "Payment Service" as payment
+participant "Платёжный\nшлюз" as pgw
+participant "Delivery Service" as delivery
+participant "Логистический\nпровайдер" as logistics
+participant "Notification\nService" as notify
+actor "Поддержка" as support
+
+payment -> kafka : **PaymentSucceeded**
+kafka -> order : PaymentSucceeded
+order -> order : Статус «Оплачен и готовится к отправке»
+kafka -> delivery : PaymentSucceeded
+
+group Временные сбои — повторяем, а не откатываем
+    delivery -> logistics : Заявка на доставку
+    logistics --> delivery : Таймаут / 5xx / circuit breaker открыт
+    delivery -> delivery : Повтор с экспоненциальной паузой\n(до 24 часов), идемпотентно по orderId
+end
+
+delivery -> logistics : Заявка на доставку
+logistics --> delivery : Отказ: адрес не обслуживается\n(или повторы исчерпаны)
+delivery -> kafka : **DeliveryCreationFailed**
+
+group Компенсации
+    kafka -> payment : DeliveryCreationFailed
+    payment -> pgw : Возврат средств
+    alt Возврат прошёл
+        pgw --> payment : Возврат проведён
+        payment -> kafka : **RefundSucceeded**
+        kafka -> inventory : RefundSucceeded
+        inventory -> inventory : Снимает резерв
+        inventory -> kafka : **InventoryReleased**
+        kafka -> order : RefundSucceeded
+        order -> order : Статус «Отменён», деньги возвращены
+        order -> kafka : **OrderCancelled**
+        kafka -> notify : OrderCancelled
+        notify -> customer : Push «Доставка невозможна,\nденьги возвращены»
+    else Шлюз не провёл возврат
+        payment -> payment : Повторы возврата исчерпаны
+        payment -> kafka : **RefundFailed**
+        kafka -> order : RefundFailed
+        order -> order : Статус «Требует внимания поддержки»
+        kafka -> notify : RefundFailed
+        notify -> support : Задача на ручной возврат
+    end
+end
+
+note over payment, delivery
+  Оплата — точка невозврата Saga (pivot). После неё сбои доставки
+  сначала лечатся повторами: оплаченный заказ должен быть доставлен.
+  Отмена с возвратом — только если доставка невозможна в принципе.
+end note
+@enduml

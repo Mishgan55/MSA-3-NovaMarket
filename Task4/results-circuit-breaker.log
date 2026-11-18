@@ -1,0 +1,61 @@
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+=== 1. Логистика работает — запрос проходит ===
+--- логистика переключена в режим: ok
+нормальный запрос            HTTP 200 за 0.001435s  {"trackingNumber":"NM-0001","status":"IN_TRANSIT"}
+
+=== 2. Логистика тормозит 5 с — таймаут 3 с и fallback, после 5 неудач breaker открывается ===
+--- логистика переключена в режим: slow
+медленный ответ, попытка 1 HTTP 503 за 3.003447s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+медленный ответ, попытка 2 HTTP 503 за 3.003733s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+медленный ответ, попытка 3 HTTP 503 за 3.003933s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+медленный ответ, попытка 4 HTTP 503 за 3.004023s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+медленный ответ, попытка 5 HTTP 503 за 3.002677s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+6-й запрос: breaker открыт      HTTP 503 за 0.000713s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+7-й запрос: breaker открыт      HTTP 503 за 0.000709s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+
+=== 3. Логистика восстановилась, но 30 с ещё не прошли — запросы к ней не идут ===
+--- логистика переключена в режим: ok
+сразу после восстановления HTTP 503 за 0.000709s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+
+=== 4. Через 30 с breaker пропускает пробный запрос, вызовы восстанавливаются ===
+через 31 с                             HTTP 200 за 0.002089s  {"trackingNumber":"NM-0001","status":"IN_TRANSIT"}
+следующий запрос              HTTP 200 за 0.001509s  {"trackingNumber":"NM-0001","status":"IN_TRANSIT"}
+
+=== 5. Логистика отвечает 500 — 5 ошибок подряд открывают breaker ===
+--- логистика переключена в режим: error
+ошибка 500, попытка 1           HTTP 503 за 0.001617s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+ошибка 500, попытка 2           HTTP 503 за 0.001261s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+ошибка 500, попытка 3           HTTP 503 за 0.001306s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+ошибка 500, попытка 4           HTTP 503 за 0.001321s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+ошибка 500, попытка 5           HTTP 503 за 0.001307s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+6-й запрос: breaker открыт      HTTP 503 за 0.000713s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+
+=== 6. Пробный запрос через 30 с снова неудачный — breaker закрывается ещё на 30 с ===
+через 31 с, логистика всё ещё 500 HTTP 503 за 0.001627s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+--- логистика переключена в режим: ok
+логистика починилась, 30 с не прошли HTTP 503 за 0.000714s  {"code":"LOGISTICS_UNAVAILABLE","message":"Служба доставки временно недоступна, повторите попытку позже"}
+ещё через 31 с                      HTTP 200 за 0.001690s  {"trackingNumber":"NM-0001","status":"IN_TRANSIT"}
+
+=== Какие запросы реально дошли до логистики ===
+control: mode -> ok
+logistics: /logistics/track/NM-0001 mode=ok
+control: mode -> slow
+logistics: /logistics/track/NM-0001 mode=slow
+logistics: /logistics/track/NM-0001 mode=slow
+logistics: /logistics/track/NM-0001 mode=slow
+logistics: /logistics/track/NM-0001 mode=slow
+logistics: /logistics/track/NM-0001 mode=slow
+control: mode -> ok
+logistics: /logistics/track/NM-0001 mode=ok
+logistics: /logistics/track/NM-0001 mode=ok
+control: mode -> error
+logistics: /logistics/track/NM-0001 mode=error
+logistics: /logistics/track/NM-0001 mode=error
+logistics: /logistics/track/NM-0001 mode=error
+logistics: /logistics/track/NM-0001 mode=error
+logistics: /logistics/track/NM-0001 mode=error
+logistics: /logistics/track/NM-0001 mode=error
+control: mode -> ok
+logistics: /logistics/track/NM-0001 mode=ok

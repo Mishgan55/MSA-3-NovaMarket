@@ -1,0 +1,48 @@
+@startuml saga-3-payment-failed
+title Saga «Оформление заказа» — оплата отклонена или не пришла вовремя
+
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor "Покупатель" as customer
+participant "Order Service" as order
+queue "Kafka" as kafka
+participant "Inventory Service" as inventory
+participant "Payment Service" as payment
+participant "Платёжный\nшлюз" as pgw
+participant "Notification\nService" as notify
+
+order -> kafka : **OrderCreated**
+kafka -> inventory : OrderCreated
+inventory -> kafka : **InventoryReserved**
+kafka -> order : InventoryReserved
+order -> order : Статус «Ожидает оплаты»
+kafka -> payment : InventoryReserved
+payment -> pgw : Списание / платёжная сессия
+
+alt Шлюз отклонил платёж (нет средств, банк отказал)
+    pgw -> payment : Webhook: платёж отклонён
+else Покупатель не оплатил за 15 минут
+    payment -> payment : Таймер сессии истёк
+    payment -> pgw : Отменить платёжную сессию
+end
+payment -> kafka : **PaymentFailed**\n(reason: DECLINED / TIMEOUT)
+
+group Компенсации
+    kafka -> inventory : PaymentFailed
+    inventory -> inventory : Снимает резерв,\nтовар снова доступен
+    inventory -> kafka : **InventoryReleased**
+    kafka -> order : PaymentFailed
+    order -> order : Статус «Отменён»,\nпричина PAYMENT_FAILED
+    order -> kafka : **OrderCancelled**
+end
+
+kafka -> notify : OrderCancelled
+notify -> customer : Push «Оплата не прошла, заказ отменён»
+
+note over inventory
+  Если сообщение потерялось, резерв всё равно снимается
+  сам по истечении 15 минут — товар не «зависает».
+end note
+@enduml
