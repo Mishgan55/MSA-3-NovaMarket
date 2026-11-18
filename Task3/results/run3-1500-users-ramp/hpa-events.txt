@@ -1,0 +1,23 @@
+LAST SEEN   TYPE      REASON                         OBJECT                                 MESSAGE
+56m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-6ff877489b to 1
+48m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 1
+47m         Warning   FailedGetResourceMetric        horizontalpodautoscaler/scaletestapp   failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+47m         Warning   FailedComputeMetricsReplicas   horizontalpodautoscaler/scaletestapp   invalid metrics (1 invalid out of 1), first error is: failed to get memory resource metric value: failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+46m         Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 2; reason: memory resource utilization (percentage of request) above target
+46m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 2 from 1
+31m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 1
+25m         Warning   FailedComputeMetricsReplicas   horizontalpodautoscaler/scaletestapp   invalid metrics (1 invalid out of 1), first error is: failed to get memory resource metric value: failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+21m         Warning   FailedGetResourceMetric        horizontalpodautoscaler/scaletestapp   failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+20m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 1
+19m         Warning   FailedGetResourceMetric        horizontalpodautoscaler/scaletestapp   failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+19m         Warning   FailedComputeMetricsReplicas   horizontalpodautoscaler/scaletestapp   invalid metrics (1 invalid out of 1), first error is: failed to get memory resource metric value: failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+15m         Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 2; reason: memory resource utilization (percentage of request) above target
+15m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 2 from 1
+13m         Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 3; reason: memory resource utilization (percentage of request) above target
+13m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 3 from 2
+9m24s       Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 4; reason: memory resource utilization (percentage of request) above target
+9m24s       Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 4 from 3
+6m24s       Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 5; reason: memory resource utilization (percentage of request) above target
+6m24s       Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 5 from 4
+5m24s       Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 6; reason: memory resource utilization (percentage of request) above target
+5m24s       Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 6 from 5

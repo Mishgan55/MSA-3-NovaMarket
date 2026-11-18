@@ -1,0 +1,68 @@
+@startuml saga-1-success
+title Saga «Оформление заказа» — успешный сценарий (хореография)
+
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor "Покупатель" as customer
+participant "Мобильное\nприложение" as app
+participant "Order Service" as order
+queue "Kafka" as kafka
+participant "Inventory Service" as inventory
+participant "Payment Service" as payment
+participant "Платёжный\nшлюз" as pgw
+participant "Delivery Service" as delivery
+participant "Логистический\nпровайдер" as logistics
+participant "Notification\nService" as notify
+actor "Продавец" as seller
+
+== Шаг 1. Подтверждение состава заказа ==
+customer -> app : Подтверждает состав, адрес,\nспособ доставки и оплаты
+app -> order : POST /orders (Idempotency-Key)
+order -> order : Сохраняет заказ «Создан»\n+ событие в outbox (одна транзакция)
+order --> app : 202 Accepted, orderId
+order -> kafka : **OrderCreated**
+
+== Шаг 2. Проверка и резервирование товаров ==
+kafka -> inventory : OrderCreated
+inventory -> inventory : Резервирует все позиции\n(резерв на 15 минут)
+inventory -> kafka : **InventoryReserved**
+kafka -> order : InventoryReserved
+order -> order : Статус «Ожидает оплаты»
+
+== Шаг 3. Оплата ==
+kafka -> payment : InventoryReserved
+alt Карта привязана
+    payment -> pgw : Списание по токену карты
+else Карта не привязана
+    payment -> pgw : Создать платёжную сессию
+    app -> payment : GET /payments?orderId
+    payment --> app : Ссылка на платёжную страницу
+    app -> pgw : Покупатель вводит данные карты
+end
+pgw -> payment : Webhook: платёж проведён
+payment -> kafka : **PaymentSucceeded**
+kafka -> order : PaymentSucceeded
+order -> order : Статус «Оплачен и готовится к отправке»
+kafka -> inventory : PaymentSucceeded
+inventory -> inventory : Снимает срок истечения с резерва
+kafka -> notify : PaymentSucceeded
+notify -> customer : Push «Заказ оплачен»
+
+== Шаг 4. Подготовка к доставке ==
+kafka -> delivery : PaymentSucceeded
+delivery -> logistics : Заявка на доставку\n(адрес, получатель, товары)
+logistics --> delivery : Трек-номер, плановая дата
+delivery -> kafka : **DeliveryCreated**
+kafka -> order : DeliveryCreated
+order -> order : Сохраняет трек-номер\nи плановую дату
+kafka -> notify : DeliveryCreated
+notify -> seller : Push «Подготовьте заказ к отправке»
+notify -> customer : Push «Заказ готовится, трек-номер …»
+
+note over order, notify
+  Saga завершена. Дальше статусы меняются по событиям DeliveryStatusChanged
+  (webhook провайдера): «Передан в доставку» → «Доставлен» → OrderCompleted.
+end note
+@enduml

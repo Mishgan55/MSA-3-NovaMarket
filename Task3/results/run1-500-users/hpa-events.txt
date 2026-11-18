@@ -1,0 +1,7 @@
+LAST SEEN   TYPE      REASON                         OBJECT                                 MESSAGE
+24m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-6ff877489b to 1
+15m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 1
+15m         Warning   FailedGetResourceMetric        horizontalpodautoscaler/scaletestapp   failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+15m         Warning   FailedComputeMetricsReplicas   horizontalpodautoscaler/scaletestapp   invalid metrics (1 invalid out of 1), first error is: failed to get memory resource metric value: failed to get memory utilization: unable to get metrics for resource memory: no metrics returned from resource metrics API
+14m         Normal    SuccessfulRescale              horizontalpodautoscaler/scaletestapp   New size: 2; reason: memory resource utilization (percentage of request) above target
+14m         Normal    ScalingReplicaSet              deployment/scaletestapp                Scaled up replica set scaletestapp-fb65fd59f to 2 from 1
